@@ -1,20 +1,97 @@
-PKG_CPPFLAGS = \
--std=c++14 \
+# Makevars for SAIGE-QTL with CUDA/NVIDIA GPU on Polaris
+# Generated with your exact paths from: nvidia-smi, mpicc -show, which nvcc
+
+# ========== GPU CONFIGURATION ==========
+# NVIDIA A100 80GB PCIe
+# Compute Capability: 80 (A100 uses sm_80)
+CUDA_HOME = /soft/compilers/cudatoolkit/cuda-12.6.3
+#CUDA_HOME = /opt/nvidia/hpc_sdk/Linux_x86_64/24.11/cuda/12.6
+CUDA_COMPUTE_CAPABILITY = 80
+NVCC = $(CUDA_HOME)/bin/nvcc
+
+# ========== MPI CONFIGURATION ==========
+# From: mpicc -show
+MPI_CPPFLAGS = $(shell mpicc -show | grep -oP '\-I[^\s]+' | head -1)
+MPI_LDFLAGS = $(shell mpicc -show | grep -oP '\-L[^\s]+' | head -1)
+#MPI_CPPFLAGS = -I/opt/cray/pe/mpich/8.1.32/ofi/gnu/12.3/include
+#MPI_LDFLAGS = -L/opt/cray/pe/mpich/8.1.32/ofi/gnu/12.3/lib -lmpi_gnu_123
+
+# ========== CUDA LIBRARIES ==========
+# A100 CUDA libraries (adjust for your CUDA version if needed)
+CUDA_LIBS = -L/soft/compilers/cudatoolkit/cuda-12.6.3/lib64 \
+-lcuda -lcudart -lcublas -lcufft -lcusparse \
+-Wl,-rpath,/soft/compilers/cudatoolkit/cuda-12.6.3/lib64
+
+# ========== COMPILER ==========
+CXX = g++
+CC = gcc
+
+# ========== PKG_CPPFLAGS ==========
+PKG_CPPFLAGS = -I$(CUDA_HOME)/include \
+-D__STDC_FORMAT_MACROS \
+-DARMA_64BIT_WORD=1 \
+-DUSE_GPU \
+-DUSE_pbdMPI \
+$(MPI_CPPFLAGS) \
+-I /lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers/ \
+-I $(TBBROOT)/include \
 -I ../thirdParty/cget/include \
 -I ../thirdParty/cget/lib \
 -I ../thirdParty/cget/lib64 \
--D SQLITE_ENABLE_COLUMN_METADATA -O3 -fpic -Wall -Wextra -pedantic  -DARMA_64BIT_WORD=1 -D__STDC_FORMAT_MACROS -fopenmp -O3
+-D SQLITE_ENABLE_COLUMN_METADATA \
+-O3 -fpic -Wall -Wextra -pedantic \
+-fsigned-char \
+-g \
+-fopenmp
 
-CXX_STD = CXX14
+CXX_STD = CXX17
+#CXX_STD = CXX14
 
-PKG_LIBS = $(ZLIB_LIB) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS) -L../thirdParty/cget/lib/ -L../thirdParty/cget/lib64/ -lsuperlu -lzstd -L../lib64 -llapack
+# ========== PKG_LIBS ==========
+PKG_LIBS = -L/opt/cray/pe/libsci/25.03.0/GNU/12.3/x86_64/lib \
+-lsci_gnu_mp $(ZLIB_LIB) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS) \
+-L/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/conda_libs \
+-L../thirdParty/cget/lib/ \
+-L../thirdParty/cget/lib64/ \
+-lsuperlu -lzstd -L../lib64 \
+ -L$(TBBROOT)/lib -ltbb \
+$(MPI_LDFLAGS) -lmpi \
+$(CUDA_LIBS)
+
 PKG_LIBS += $(shell ${R_HOME}/bin/Rscript -e "RcppParallel::RcppParallelLibs()")
 
+# ========== OBJECTS ==========
+# If you have GPU code files, add them here (e.g., gpuSAIGE_step2_cuda.o)
+# Otherwise, just use the standard SAIGE objects
+OBJECTS = RcppExports.o GENO_null.o getMem.o VCF.o BGEN.o PLINK.o SAIGE_test.o SPA_binary.o SPA.o SPA_survival.o UTIL.o Main.o test.o CCT.o Binary_HyperGeo.o Binary_ComputeExact.o Binary_global.o Binary_ComputeExactSKATO.o Binary_resampling.o Binary_Permu_SKAT.o ER_binary_func.o LDmat.o SKATO.o qfc.o gpuSparseMult.o
 
-#OBJECTS = RcppExports.o SAIGE_fitGLMM_fast.o getMem.o VCF.o BGEN.o PLINK.o SAIGE_test.o SPA_binary.o SPA.o SPA_survival.o UTIL.o Main.o test.o CCT.o 
-#OBJECTS = RcppExports.o SAIGE_fitGLMM_fast.o getMem.o VCF.o BGEN.o PLINK.o SAIGE_test.o SPA_binary.o SPA.o SPA_survival.o UTIL.o Main.o test.o CCT.o Binary_HyperGeo.o Binary_ComputeExact.o Binary_global.o Binary_ComputeExactSKATO.o Binary_resampling.o Binary_Permu_SKAT.o ER_binary_func.o LDmat.o 
-#OBJECTS = RcppExports.o SAIGE_fitGLMM_fast_multiV.o getMem.o VCF.o BGEN.o PLINK.o SAIGE_test.o SPA_binary.o SPA.o SPA_survival.o UTIL.o Main.o test.o CCT.o Binary_HyperGeo.o Binary_ComputeExact.o Binary_global.o Binary_ComputeExactSKATO.o Binary_resampling.o Binary_Permu_SKAT.o ER_binary_func.o LDmat.o 
-OBJECTS = RcppExports.o GENO_null.o getMem.o VCF.o BGEN.o PLINK.o SAIGE_test.o SPA_binary.o SPA.o SPA_survival.o UTIL.o Main.o test.o CCT.o Binary_HyperGeo.o Binary_ComputeExact.o Binary_global.o Binary_ComputeExactSKATO.o Binary_resampling.o Binary_Permu_SKAT.o ER_binary_func.o LDmat.o SKATO.o qfc.o 
+# If you add GPU files, uncomment and update:
+OBJECTS += gpuSymMatMult.o
 
+# ========== COMPILATION RULES FOR .cu FILES ==========
+# Rule for native CUDA kernel files (.cu files)
+%.o: %.cu
+	$(NVCC) -c -O2 \
+	-gencode arch=compute_80,code=sm_80 \
+	-I$(CUDA_HOME)/include \
+	$(MPI_CPPFLAGS) \
+	-Xcompiler "$(PKG_CPPFLAGS)" \
+	$< -o $@
+
+# Rule for CUDA-enabled C++ files (if mixing CUDA runtime with C++)
+%_cuda.o: %_cuda.cpp
+	$(CXX) -c -O2 -fpic \
+	-I$(CUDA_HOME)/include \
+	$(PKG_CPPFLAGS) \
+	$< -o $@
+
+# ========== BUILD RULES ==========
 all: $(SHLIB)
+
 $(SHLIB): ${OBJECTS} Makevars
+	$(CXX) $(LDFLAGS) -shared -o $(SHLIB) $(OBJECTS) $(PKG_LIBS)
+
+# Optional: Explicit dependencies for GPU files (if you add them)
+# Main.o: gpuSymMatMult.o
+# gpuSymMatMult.o: gpuSymMatMult.hpp
+

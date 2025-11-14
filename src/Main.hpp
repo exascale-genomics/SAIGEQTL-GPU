@@ -701,3 +701,10 @@ arma::fvec getprodImatImattbVec(arma::fvec & bVec);
 
 
 #endif
+
+// ========== GPU INTEGRATION ==========
+#if defined(USE_GPU)
+    #include "gpuSymMatMult.hpp"
+#endif
+// ========== END GPU INTEGRATION ==========
+

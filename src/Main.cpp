@@ -25,6 +25,14 @@
 #include "GENO_null.hpp"
 #include "SKATO.hpp"
 
+#if defined(USE_GPU)
+#include "gpuSymMatMult.hpp"
+#include "gpuSparseMult.hpp"
+//#include "gpuSparseMult_Batch.hpp"
+#include <mpi.h>
+#include <cusparse.h>
+#include <cublas_v2.h>
+#endif
 
 #include <Rcpp.h>
 #include "getMem.hpp"
@@ -69,6 +77,21 @@ arma::uvec g_covarianceidxMat_notcol1;
 //arma::fvec g_var_weights;
 unsigned int g_omp_num_threads;
 
+#if defined(USE_GPU)
+// GPU global variables
+static NullGENO::gpuSymMatMult* ptr_gpuSNPMatrix = NULL;
+bool g_gpu_loaded = false;
+bool g_batch_mode = false;              // GPU BATCH PROCESSING 
+int g_batch_size = 50;                  // GPU BATCH PROCESSING
+#endif
+
+#if defined(USE_GPU)
+// Forward declarations for GPU functions
+int gpuDistributeSNPs();
+arma::fvec gpuParallelCrossProd(arma::fcolvec &bVec);
+arma::fvec gpuParallelCrossProd_LOCO(arma::fcolvec &bVec);
+Rcpp::List processBatch_GPU_Main(arma::fmat& residuals_batch, int n_traits, bool use_grm);
+#endif
 
 //Step 2
 // global variables for analysis
@@ -4208,7 +4231,54 @@ void copy_singleInGroup(){
   }
 }
 
+// =========================================================================
+// GPU BATCH PROCESSING WRAPPER FOR MAIN.CPP (NEW)
+// =========================================================================
 
+#if defined(USE_GPU)
+
+/*! Process multiple traits/genes using GPU batch processing
+ *  @param residuals_batch Matrix of residuals (n_samples × n_traits)
+ *  @param n_traits Number of traits/genes
+ *  @param use_grm Whether to include GRM
+ *  @return List with variance components and iteration info
+ */
+/*!
+Rcpp::List processBatch_GPU_Main(
+    arma::fmat& residuals_batch,
+    int n_traits,
+    bool use_grm
+) {
+    
+    std::cout << "\n[MAIN-GPU-BATCH] Processing batch of " << n_traits << " traits on GPU" << std::endl;
+    std::cout << "[MAIN-GPU-BATCH] Use GRM: " << (use_grm ? "YES" : "NO") << std::endl;
+    
+    try {
+        // Call GPU batch processing
+        NullGENO::PCGResultBatch result = NullGENO::fitVarianceRatio_batch_GPU_FLEXIBLE(
+            residuals_batch,
+            n_traits,
+            use_grm,
+            1e-5,      // tolPCG
+            500        // maxiterPCG
+        );
+        
+        // Convert to R List
+        Rcpp::List return_list = Rcpp::List::create(
+            Rcpp::Named("variance_components") = result.variance_components,
+            Rcpp::Named("iterations_per_gene") = result.iterations_per_gene,
+            Rcpp::Named("converged") = result.converged_flags
+        );
+        
+        return return_list;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[MAIN-GPU-BATCH] ERROR: " << e.what() << std::endl;
+        throw;
+    }
+}
+*/
+#endif  // USE_GPU
 
 // [[Rcpp::export]]
 void set_dup_sample_index(arma::uvec & t_dup_sample_Index){
@@ -4216,7 +4286,6 @@ void set_dup_sample_index(arma::uvec & t_dup_sample_Index){
         arma::uvec uniq_sample_Inddex  = arma::find_unique(g_dup_sample_Index);
         g_n_unique = uniq_sample_Inddex.n_elem;
 }
-
 
 // [[Rcpp::export]]
 void setupSparseGRM_new(arma::sp_mat & t_spGRM){
@@ -4289,24 +4358,61 @@ void set_T_longl_mat_SAIGEtest(arma::sp_mat & t_Tlongmat, arma::vec & t_T_longl_
 
 // [[Rcpp::export]]
 arma::fvec getCrossprodMatAndKin(arma::fcolvec& bVec, bool LOCO){
+    std::cout << "HERE getCrossprodMatAndKin " << std::endl;
     arma::fvec crossProdVec;
     if(g_isSparseGRM){
         crossProdVec = g_spGRM * bVec;
     }else{
-	if(!LOCO){    
+        if(!LOCO){
+#if defined(USE_GPU)
+          if (!ptr_gpuSNPMatrix->is_loaded()) {
+		  std::cout << "HERE getCrossprodMatAndKin loading SNPs" << std::endl;
+            gpuDistributeSNPs();
+          }
+          if(ptr_gpuSNPMatrix->is_loaded()) {
+		  std::cout << "HERE getCrossprodMatAndKin gpus" << std::endl;
+              crossProdVec = gpuParallelCrossProd(bVec);
+          } else {
+		  std::cout << "HERE getCrossprodMatAndKin no gpus1" << std::endl;
+              crossProdVec = parallelCrossProd(bVec);
+          }
+#else
+	  std::cout << "HERE getCrossprodMatAndKin no gpus2" << std::endl;
           crossProdVec = parallelCrossProd(bVec);
-	}else{
-	  crossProdVec = parallelCrossProd_LOCO(bVec);
-	}	
+#endif
+        }else{
+#if defined(USE_GPU)
+          if (!ptr_gpuSNPMatrix->is_loaded()) {
+		                    std::cout << "HERE getCrossprodMatAndKin loading SNPs LOCO" << std::endl;
+            gpuDistributeSNPs();
+          }
+          if(ptr_gpuSNPMatrix->is_loaded()) {
+              // Use GPU if available
+	      std::cout << "HERE getCrossprodMatAndKin gpus LOCO" << std::endl;
+              crossProdVec = gpuParallelCrossProd_LOCO(bVec);  // Need GPU LOCO version
+          } else {
+              // Fall back to CPU
+	      std::cout << "HERE getCrossprodMatAndKin no gpus1 LOCO" << std::endl;
+              crossProdVec = parallelCrossProd_LOCO(bVec);
+          }
+#else
+	  std::cout << "HERE getCrossprodMatAndKin no gpus2 LOCO" << std::endl;
+          crossProdVec = parallelCrossProd_LOCO(bVec);
+#endif
+        }
     }
     return(crossProdVec);
 }
 
 
-
-
 // [[Rcpp::export]]
 arma::fcolvec getCrossprod_multiV(arma::fcolvec& bVec, arma::fvec& wVec, arma::fvec& tauVec, bool LOCO){
+
+	std::cout << "[DEBUG getCrossprod_multiV] Called with:" << std::endl;
+        std::cout << "  Kmat_vec.size() = " << Kmat_vec.size() << std::endl;
+        std::cout << "  g_I_longl_mat.n_rows = " << g_I_longl_mat.n_rows << std::endl;
+        std::cout << "  g_T_longl_mat.n_rows = " << g_T_longl_mat.n_rows << std::endl;
+        std::cout << "  bVec.n_elem = " << bVec.n_elem << std::endl;
 
         arma::fcolvec crossProdVec;
         // Added by SLEE, 04/16/2017
@@ -4360,13 +4466,43 @@ arma::fcolvec getCrossprod_multiV(arma::fcolvec& bVec, arma::fvec& wVec, arma::f
 
                 if(Kmat_vec.size() > 0){
                         for(unsigned int i = 0; i < Kmat_vec.size(); i++){
-                                crossProdVec  = crossProdVec + tauVec(tau_ind)*(Kmat_vec[i] * bVec);
+                                std::cout << "[DEBUG] Did not go to GPU code" << std::endl;
+				crossProdVec  = crossProdVec + tauVec(tau_ind)*(Kmat_vec[i] * bVec);
                                 tau_ind = tau_ind + 1;
                         }
                 }
 
         }else{ //if(g_T_longl_mat.n_rows == 0 && g_I_longl_mat.n_rows == 0){
+#ifdef USE_GPU
+                std::cout << "[DEBUG] About to enter GPU code" << std::endl;
+                //arma::fvec ImatImattbVec = NullGENO::getprodImatImattbVec_GPU_Sparse(bVec);
+		// Prepare the result vector
+                arma::fvec ImatImattbVec(bVec.n_elem);
+
+		// Convert g_I_start_indices from uvec to int array
+                int n_groups = g_I_start_indices.n_elem - 1;
+                std::vector<int> start_indices_int(g_I_start_indices.n_elem);
+                for (size_t i = 0; i < g_I_start_indices.n_elem; i++) {
+                    start_indices_int[i] = static_cast<int>(g_I_start_indices[i]);
+                }
+
+                // Call the optimized GPU function
+                int ret = NullGENO::gpuSymMatMult_prodImatImatt(
+                    0,  // rank (use 0 for single GPU, or appropriate MPI rank)
+                    bVec.memptr(),
+                    ImatImattbVec.memptr(),
+                    start_indices_int.data(),
+                    bVec.n_elem,
+                    n_groups
+                );
+
+                if (ret != EXIT_SUCCESS) {
+                    Rcpp::stop("GPU computation failed in getprodImatImattbVec");
+                }
+#else
+		std::cout << "[DEBUG] Did not go to GPU code" << std::endl;
                 arma::fvec ImatImattbVec = getprodImatImattbVec(bVec);
+#endif
 		crossProdVec  = crossProdVec + tauVec(tau_ind) * ImatImattbVec;
 		//crossProdVec  = crossProdVec + tauVec(tau_ind) * (g_I_longl_mat * Ibvec);
                 tau_ind = tau_ind + 1;
@@ -4385,7 +4521,7 @@ arma::fcolvec getCrossprod_multiV(arma::fcolvec& bVec, arma::fvec& wVec, arma::f
 
                 if(Kmat_vec.size() > 0){
                         for(unsigned int i = 0; i < Kmat_vec.size(); i++){
-                                V_I_bvec = Kmat_vec[i] * Ibvec;
+				V_I_bvec = Kmat_vec[i] * Ibvec;
                                 crossProdVec  = crossProdVec + tauVec(tau_ind) * (g_I_longl_mat * V_I_bvec);
                                 tau_ind = tau_ind + 1;
                                 if(g_T_longl_mat.n_rows > 0){
@@ -4405,7 +4541,46 @@ arma::fcolvec getCrossprod_multiV(arma::fcolvec& bVec, arma::fvec& wVec, arma::f
 }
 
 
+// =========================================================================
+// BATCH VERSION OF getCrossprod_multiV (NEW - GPU BATCH PROCESSING)
+// =========================================================================
 
+// [[Rcpp::export]]
+arma::fmat getCrossprod_multiV_BATCH(
+    arma::fmat& bVec_batch,    // n × K matrix (n samples, K genes/traits)
+    arma::fvec& wVec,          // weights vector
+    arma::fvec& tauVec,        // tau variance components
+    bool LOCO                  // leave-one-chromosome-out flag
+) {
+    
+    int n_samples = bVec_batch.n_rows;
+    int n_traits = bVec_batch.n_cols;
+    
+    std::cout << "[GPU-BATCH-WRAPPER] getCrossprod_multiV_BATCH called:" << std::endl;
+    std::cout << "[GPU-BATCH-WRAPPER] Processing " << n_traits << " traits with " 
+              << n_samples << " samples each" << std::endl;
+    
+    // Results matrix (same dimensions as input)
+    arma::fmat results(n_samples, n_traits);
+    
+    // Process each trait through the GPU-accelerated function
+    for (int g = 0; g < n_traits; g++) {
+        
+        // Extract residuals for this trait
+        arma::fcolvec bVec_g = bVec_batch.col(g);
+        
+        // Call GPU-accelerated getCrossprod_multiV for this trait
+        results.col(g) = getCrossprod_multiV(bVec_g, wVec, tauVec, LOCO);
+        
+        if (g % 10 == 0) {
+            std::cout << "[GPU-BATCH-WRAPPER] Processed trait " << (g+1) << "/" << n_traits << std::endl;
+        }
+    }
+    
+    std::cout << "[GPU-BATCH-WRAPPER] Batch processing complete!" << std::endl;
+    
+    return results;
+}
 
 
 // [[Rcpp::export]]
@@ -4654,6 +4829,7 @@ arma::fvec getPCG1ofSigmaAndVector_multiV(arma::fvec& wVec,  arma::fvec& tauVec,
 	//std::cout << "getPCG1ofSigmaAndVector_multiV start 2" << std::endl;
 
         int iter = 0;
+	NullGENO::initGPUSparseMatrix(g_I_longl_mat);
         while (sumr2 > tolPCG && iter < maxiterPCG) {
 		iter = iter + 1;
 		        //std::cout << "getPCG1ofSigmaAndVector_multiV Here2" << std::endl;
@@ -4679,7 +4855,9 @@ arma::fvec getPCG1ofSigmaAndVector_multiV(arma::fvec& wVec,  arma::fvec& tauVec,
 
         }
         cout << "iter from getPCG1ofSigmaAndVector " << iter << endl;
-} 
+}
+NullGENO::cleanupGPUSparseMatrix();
+
         return(xVec);
 }
 
@@ -5133,7 +5311,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
         YPAPY.zeros();
         arma::fvec Trace(k1);
         Trace.zeros();
-        //std::cout << "k1 " << k1 << std::endl;
+        std::cout << "k1 " << k1 << std::endl;
         arma::fmat Sigma_iXt = Sigma_iX.t();
         arma::fmat Xmatt = Xmat.t();
 
@@ -5147,7 +5325,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
         //
 	arma::fvec crossProd1, GRM_I_bvec, Ibvec, Tbvec, GRM_T_bvec, crossProdGRM_TGIb, crossProdGRM_IGTb, V_I_bvec, V_T_bvec, crossProdV_TGIb, crossProdV_IGTb, crossProdGRM_TIb, crossProdGRM_ITb;
 
-
+        std::cout << "HEREHERE HERERERE " << std::endl;
         if(g_I_longl_mat.n_rows == 0 && g_T_longl_mat.n_rows == 0){
                 for(int i=0; i<k1; i++){
                     if(fixtauVec(i) == 0){
@@ -5155,6 +5333,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
                                 APY = PY1;
                         }else if(i==1){
 				if(g_isGRM){
+					std::cout << "HEREHERE HERERERE1 " << std::endl;
                                         APY = getCrossprodMatAndKin(PY1, LOCO);
                                 }else{
 					if(Kmat_vec.size() > 0){
@@ -5173,6 +5352,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
 				}	
                         }
                         APYmat.col(i) = APY;
+			std::cout << "HEREHERE HERERERE3 " << std::endl;
                         PAPY_1 = getPCG1ofSigmaAndVector_multiV(wVec, tauVec, APY, maxiterPCG, tolPCG, LOCO);
                         PAPY = PAPY_1 - Sigma_iX * (cov * (Sigma_iXt * PAPY_1));
                         for(int j=0; j<=i; j++){
@@ -5188,6 +5368,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
 
                 if(g_isGRM){
                		Ibvec = g_I_longl_mat_t * PY1;
+			std::cout << "HEREHERE HERERERE2 " << std::endl;
                         GRM_I_bvec = getCrossprodMatAndKin(Ibvec, LOCO);
                 }
 
@@ -5231,6 +5412,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
 
                         }
                         APYmat.col(i) = APY;
+			std::cout << "HEREHERE HERERERE4 " << std::endl;
 			PAPY_1 = getPCG1ofSigmaAndVector_multiV(wVec, tauVec, APY, maxiterPCG, tolPCG, LOCO);
                         PAPY = PAPY_1 - Sigma_iX * (cov * (Sigma_iXt * PAPY_1));
                         for(int j=0; j<=i; j++){
@@ -5246,6 +5428,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
                 }else{
                   Tbvec = g_T_longl_mat.t() * PY1;
                   if(g_isGRM){
+			  std::cout << "HEREHERE HERERERE6 " << std::endl;
                     GRM_T_bvec = getCrossprodMatAndKin(Tbvec, LOCO);
                   }
 
@@ -5312,6 +5495,7 @@ int nrun, int maxiterPCG, float tolPCG, float traceCVcutoff, bool LOCO){
 
 		     }//else for if(g_isGRM){	     
                         APYmat.col(i) = APY;
+			std::cout << "HEREHERE HERERERE8 " << std::endl;
                         PAPY_1 = getPCG1ofSigmaAndVector_multiV(wVec, tauVec, APY, maxiterPCG, tolPCG, LOCO);
                         PAPY = PAPY_1 - Sigma_iX * (cov * (Sigma_iXt * PAPY_1));
                         for(int j=0; j<=i; j++){
@@ -5397,7 +5581,7 @@ arma::fvec GetTrace_multiV(arma::fmat Sigma_iX, arma::fmat& Xmat, arma::fvec& wV
                         uVec = as<arma::fvec>(uVec0);
                         uVec = uVec*2 - 1;
 
-			//std::cout << "GetTrace_multiV Here 1" << std::endl;
+			std::cout << "GetTrace_multiV Here 1" << std::endl;
                         Sigma_iu = getPCG1ofSigmaAndVector_multiV(wVec, tauVec, uVec, maxiterPCG, tolPCG, LOCO);
                         Pu = Sigma_iu - Sigma_iX * (cov1 *  (Sigma_iXt * uVec));
 
@@ -6908,6 +7092,189 @@ struct CorssProd_LOCO : public Worker
 };
 
 
+#if defined(USE_GPU)
+// GPU-accelerated cross product calculation
+int gpuDistributeSNPs()
+{
+    std::cout << ">>> ENTERED gpuDistributeSNPs <<<" << std::endl;
+
+    int Msub_mafge1perc = ptr_gNULLGENOobj->getnumberofMarkerswithMAFge_minMAFtoConstructGRM();
+    int N = ptr_gNULLGENOobj->getNnomissing();
+    int rank, size;
+    pid_t pid;
+
+    std::cout << "Msub_mafge1perc = " << Msub_mafge1perc << std::endl;
+    std::cout << "N = " << N << std::endl;
+
+#if defined(PERF_TIMING)
+    std::chrono::steady_clock::time_point begin, end;
+#endif
+
+    pid = getpid();
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    std::cout << "[" << rank << "/" << size << "] pid=" << pid << std::endl;
+
+    // Distribute SNPs into multiple GPUs.
+    // set_matrix() stores matrix A in its GPU memory.
+    int max_per_mpi = (Msub_mafge1perc-1)/size + 1;
+    int start_index = rank*max_per_mpi;
+    int end_index = min(Msub_mafge1perc, (rank+1)*max_per_mpi);
+    int n_cols = end_index - start_index;
+
+    arma::fmat A(N, n_cols, arma::fill::zeros);
+    arma::fvec vec;
+
+    int Aj = 0;
+    for (int i=start_index; i<end_index; i++) {
+        ptr_gNULLGENOobj->Get_OneSNP_StdGeno(i, &vec);
+        A.col(Aj) = vec;
+        Aj++;
+    }
+    std::cout << "[" << rank << "] "
+              << "Aj = " << Aj << " n_rows = " << A.n_rows << " n_cols = " << A.n_cols << std::endl;
+    std::cout << "[" << rank << "] "
+              << "A.memptr() in gcc = " << A.memptr() << " pid = " << pid << std::endl;
+#if defined(PERF_TIMING)
+    begin = std::chrono::steady_clock::now();
+#endif
+    ptr_gpuSNPMatrix->set_matrix(rank, (size_t)start_index, (size_t)A.n_rows, (size_t)A.n_cols, A.memptr());
+#if defined(PERF_TIMING)
+    end = std::chrono::steady_clock::now();
+    std::cout << "[" << rank << "] "
+              << "set_matrix (secs) = "
+              << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count())/1000000.0
+              << std::endl;
+#endif
+
+    int n_global_cols = 0;
+    MPI_Allreduce(&n_cols, &n_global_cols, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    ptr_gpuSNPMatrix->m_global_cols = (size_t)n_global_cols;
+
+    if (n_global_cols != Msub_mafge1perc) {
+        std::cerr << "Error: size mismatch: n_global_cols(" << n_global_cols
+                  << ") != Msub_mafge1perc(" << Msub_mafge1perc << ")" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    return EXIT_SUCCESS;
+}
+
+arma::fvec gpuParallelCrossProd_range(int startIndex, int endIndex, arma::fcolvec &bVec) {
+	int N = ptr_gNULLGENOobj->getNnomissing();
+	int rank;
+
+#if defined(PERF_TIMING)
+    std::chrono::steady_clock::time_point begin, end;
+#endif
+
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+	arma::fvec crossProdVec(N, arma::fill::zeros);
+	arma::fvec local_crossProdVec(N, arma::fill::zeros);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+#if defined(PERF_TIMING)
+    begin = std::chrono::steady_clock::now();
+#endif
+	ptr_gpuSNPMatrix->sym_sgemv_range(rank, (size_t)startIndex, (size_t)endIndex, (size_t)bVec.n_elem, bVec.memptr(), local_crossProdVec.memptr());
+	MPI_Allreduce(local_crossProdVec.memptr(), crossProdVec.memptr(), N,
+	              MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+#if defined(PERF_TIMING)
+    end = std::chrono::steady_clock::now();
+    if (rank == 0) {
+        std::cout << "[" << rank << "] "
+                  << "sym_sgemv (secs) = "
+                  << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count())/1000000.0
+                  << std::endl;
+    }
+#endif
+
+	return crossProdVec;
+}
+
+arma::fvec gpuParallelCrossProd(arma::fcolvec &bVec) {
+	int N = ptr_gNULLGENOobj->getNnomissing();
+	int rank;
+#if defined(PERF_TIMING)
+    std::chrono::steady_clock::time_point begin, end;
+#endif
+
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+	arma::fvec crossProdVec(N, arma::fill::zeros);
+	arma::fvec local_crossProdVec(N, arma::fill::zeros);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+#if defined(PERF_TIMING)
+    begin = std::chrono::steady_clock::now();
+#endif
+	ptr_gpuSNPMatrix->sym_sgemv(rank, (size_t)bVec.n_elem, bVec.memptr(), local_crossProdVec.memptr());
+	MPI_Allreduce(local_crossProdVec.memptr(), crossProdVec.memptr(), N,
+	              MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+#if defined(PERF_TIMING)
+    end = std::chrono::steady_clock::now();
+    if (rank == 0) {
+        std::cout << "[" << rank << "] "
+                  << "sym_sgemv (secs) = "
+                  << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count())/1000000.0
+                  << std::endl;
+    }
+#endif
+
+	return crossProdVec;
+}
+#endif  // USE_GPU
+
+#if defined(USE_GPU)
+arma::fvec gpuParallelCrossProd_LOCO(arma::fcolvec &bVec) {
+    int startIndex = ptr_gNULLGENOobj->getStartIndex();
+    int endIndex = ptr_gNULLGENOobj->getEndIndex();
+    int N = ptr_gNULLGENOobj->getNnomissing();
+    int rank;
+
+#if defined(PERF_TIMING)
+    std::chrono::steady_clock::time_point begin, end;
+#endif
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    arma::fvec crossProdVec(N, arma::fill::zeros);
+    arma::fvec local_crossProdVec(N, arma::fill::zeros);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+#if defined(PERF_TIMING)
+    begin = std::chrono::steady_clock::now();
+#endif
+    // Use the range function to exclude the LOCO chromosome
+    ptr_gpuSNPMatrix->sym_sgemv_range(rank, 0, (size_t)startIndex, (size_t)bVec.n_elem, bVec.memptr(), local_crossProdVec.memptr());
+    arma::fvec local_crossProdVec2(N, arma::fill::zeros);
+    if (endIndex + 1 < ptr_gpuSNPMatrix->m_global_cols) {
+        ptr_gpuSNPMatrix->sym_sgemv_range(rank, (size_t)(endIndex + 1), ptr_gpuSNPMatrix->m_global_cols, (size_t)bVec.n_elem, bVec.memptr(), local_crossProdVec2.memptr());
+    }
+    local_crossProdVec += local_crossProdVec2;
+    
+    MPI_Allreduce(local_crossProdVec.memptr(), crossProdVec.memptr(), N,
+                  MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+#if defined(PERF_TIMING)
+    end = std::chrono::steady_clock::now();
+    if (rank == 0) {
+        std::cout << "[" << rank << "] "
+                  << "sym_sgemv_LOCO (secs) = "
+                  << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count())/1000000.0
+                  << std::endl;
+    }
+#endif
+
+    // Normalize by the number of markers used (excluding LOCO chromosome)
+    int Msub_MAFge_minMAFtoConstructGRM_in_b = ptr_gNULLGENOobj->getMsub_MAFge_minMAFtoConstructGRM_in();
+    int Msub_MAFge_minMAFtoConstructGRM_singleVar_b = ptr_gNULLGENOobj->getMsub_MAFge_minMAFtoConstructGRM_singleChr_in();
+    int markerNum = Msub_MAFge_minMAFtoConstructGRM_in_b - Msub_MAFge_minMAFtoConstructGRM_singleVar_b;
+    
+    return crossProdVec / markerNum;
+}
+#endif  // USE_GPU
+	//
 // [[Rcpp::export]]
 arma::fvec parallelCrossProd(arma::fcolvec & bVec) {
 
@@ -7214,6 +7581,12 @@ void  parallelsumTwoVec(arma::fvec &x) {
 // [[Rcpp::export]]
 void setgenoNULL(){
 	ptr_gNULLGENOobj = new NullGENO::NullGenoClass();
+#if defined(USE_GPU)
+        if (ptr_gpuSNPMatrix == NULL) {
+            ptr_gpuSNPMatrix = new NullGENO::gpuSymMatMult();
+            std::cout << "GPU matrix object initialized" << std::endl;
+        }
+#endif
 }
 // [[Rcpp::export]]
 void setgeno(std::string bedfile, std::string bimfile, std::string famfile, std::vector<int> & subSampleInGeno, std::vector<bool> & indicatorGenoSamplesWithPheno, float memoryChunk, bool isDiagofKinSetAsOne)
