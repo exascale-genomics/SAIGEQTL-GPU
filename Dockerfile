@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     libpcre2-dev \
     libreadline-dev \
+    tzdata \
     openmpi-bin \
     openmpi-common \
     libopenmpi-dev \
@@ -87,6 +88,7 @@ RUN apt-get update && apt-get install -y \
     libxml2 \
     zlib1g \
     libreadline8 \
+    tzdata \
     openmpi-bin \
     libopenmpi3 \
     && rm -rf /var/lib/apt/lists/*
