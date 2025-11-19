@@ -66,7 +66,7 @@ RUN R -e "install.packages('pbdMPI', \
 
 # Clone and build SAIGE-QTL from GitHub
 WORKDIR /opt
-RUN git clone https://github.com/exascale-genomics/SAIGE-QTL.git && \
+RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git && \
     cd SAIGE-QTL/SAIGEQTL && \
     R CMD INSTALL --build .
 
