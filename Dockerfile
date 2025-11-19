@@ -83,6 +83,19 @@ WORKDIR /opt/SAIGEQTL-GPU
 # Run the install_packages.R script
 RUN Rscript ./extdata/install_packages.R
 
+# Install savvy library (VCF/BCF reader) and other third-party C++ dependencies
+RUN mkdir -p thirdParty/cget/include && \
+    cd thirdParty && \
+    git clone https://github.com/statgen/savvy.git && \
+    cd savvy && \
+    mkdir -p build && cd build && \
+    cmake .. && \
+    make -j$(nproc) && \
+    make install && \
+    # Copy headers to expected location
+    cp -r ../include/savvy ../../cget/include/ || true && \
+    cd ../../.. || true
+
 # Install pbdMPI with OpenMPI configuration
 RUN R -e "install.packages('pbdMPI', \
     configure.args='--with-mpi-type=OPENMPI', \
