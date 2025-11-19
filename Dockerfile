@@ -1,5 +1,6 @@
-# SAIGE-QTL GPU Docker Container
-# Multi-stage build for efficient image size
+# SAIGE-QTL GPU Docker Container - GitHub Version
+# This version clones code from GitHub during build
+# Use this when your code is pushed to GitHub (recommended)
 
 # Stage 1: Build environment
 FROM nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
@@ -111,7 +112,7 @@ WORKDIR /data
 ENTRYPOINT ["/bin/bash"]
 
 # Labels
-LABEL maintainer="arodri7"
+LABEL maintainer="Alex Rodriguez"
 LABEL description="GPU-accelerated SAIGE-QTL for eQTL analysis with repeated measures"
 LABEL version="1.0"
-LABEL source="https://github.com/alexrodrig3z/SAIGE-QTL"
+LABEL source="https://github.com/exascale-genomics/SAIGEQTL-GPU.git"
