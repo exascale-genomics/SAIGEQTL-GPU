@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     libopenblas-dev \
     liblapack-dev \
     libbz2-dev \
+    libzstd-dev \
     liblzma-dev \
     libcurl4-openssl-dev \
     libssl-dev \
