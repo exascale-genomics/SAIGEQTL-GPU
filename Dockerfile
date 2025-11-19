@@ -28,11 +28,15 @@ RUN apt-get update && apt-get install -y \
     libpcre2-dev \
     libreadline-dev \
     tzdata \
-    libtbb12-dev \
+    libtbb-dev \
     openmpi-bin \
     openmpi-common \
     libopenmpi-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Set environment to help find TBB headers
+ENV CXXFLAGS="-I/usr/include/tbb -DTBB_SUPPRESS_DEPRECATED_MESSAGES"
+ENV PKG_CXXFLAGS="-I/usr/include/tbb -DTBB_SUPPRESS_DEPRECATED_MESSAGES"
 
 # Install R 4.4.0
 RUN wget https://cran.r-project.org/src/base/R-4/R-4.4.0.tar.gz && \
@@ -94,7 +98,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g \
     libreadline8 \
     tzdata \
-    libtbb12 \
+    libtbb-dev \
     openmpi-bin \
     libopenmpi3 \
     && rm -rf /var/lib/apt/lists/*
