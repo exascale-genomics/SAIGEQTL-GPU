@@ -112,10 +112,30 @@ RUN if [ -f src/GENO_null.hpp ]; then \
         fi; \
     fi
 
-# Fix Makevars if it exists
+# Debug: Show the Makevars file content
+RUN echo "=== Checking Makevars ===" && \
+    if [ -f src/Makevars ]; then \
+        echo "=== Original Makevars content ===" && \
+        cat src/Makevars; \
+    fi
+
+# Fix Makevars to use container paths instead of Polaris-specific paths
 RUN if [ -f src/Makevars ]; then \
+        # Remove Polaris-specific paths
+        sed -i 's|-I/soft/compilers/cudatoolkit/cuda-[0-9.]*/include|-I/usr/local/cuda/include|g' src/Makevars && \
+        sed -i 's|-I/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
+        sed -i 's|-I /lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
+        # Fix thirdParty path to use current directory
+        sed -i 's|-I ../thirdParty/cget/include|-I./thirdParty/cget/include|g' src/Makevars && \
+        sed -i 's|-I ../thirdParty/cget/lib|-I./thirdParty/cget/lib|g' src/Makevars && \
+        sed -i 's|-I ../thirdParty/cget/lib64|-I./thirdParty/cget/lib64|g' src/Makevars && \
+        # Fix TBB paths
         sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars && \
-        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars; \
+        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars && \
+        # Fix MPI paths for OpenMPI in container
+        sed -i 's|-I/usr/lib/aarch64-linux-gnu/openmpi/include|-I/usr/lib/x86_64-linux-gnu/openmpi/include|g' src/Makevars && \
+        echo "=== Updated Makevars ===" && \
+        cat src/Makevars; \
     fi
 
 # Set R build environment variables with explicit TBB paths
