@@ -1,6 +1,5 @@
-# SAIGE-QTL GPU Docker Container - GitHub Version
-# This version clones code from GitHub during build
-# Use this when your code is pushed to GitHub (recommended)
+# SAIGE-QTL GPU Docker Container
+# Multi-stage build for efficient image size
 
 # Stage 1: Build environment
 FROM nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
@@ -17,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     gfortran \
+    pkg-config \
     libopenblas-dev \
     liblapack-dev \
     libbz2-dev \
@@ -38,18 +38,16 @@ WORKDIR /tmp
 RUN wget https://github.com/oneapi-src/oneTBB/archive/refs/tags/v2020.3.tar.gz && \
     tar -xzf v2020.3.tar.gz && \
     cd oneTBB-2020.3 && \
-    make -j$(nproc) && \
-    cp -r include/tbb /usr/local/include/ && \
-    cp build/*_release/*.so* /usr/local/lib/ && \
+    make -j$(nproc) compiler=gcc && \
+    mkdir -p /usr/local/include/tbb && \
+    cp -r include/tbb/* /usr/local/include/tbb/ && \
+    find build -name "*.so*" -exec cp {} /usr/local/lib/ \; && \
     ldconfig && \
-    cd .. && \
+    cd /tmp && \
     rm -rf oneTBB-2020.3 v2020.3.tar.gz
 
-# Verify TBB installation
-RUN ls -la /usr/local/include/tbb/ && \
-    ls -la /usr/local/lib/libtbb*
-
 # Install R 4.4.0
+WORKDIR /tmp
 RUN wget https://cran.r-project.org/src/base/R-4/R-4.4.0.tar.gz && \
     tar -xzf R-4.4.0.tar.gz && \
     cd R-4.4.0 && \
@@ -61,7 +59,7 @@ RUN wget https://cran.r-project.org/src/base/R-4/R-4.4.0.tar.gz && \
                 --with-x=no && \
     make -j$(nproc) && \
     make install && \
-    cd .. && \
+    cd /tmp && \
     rm -rf R-4.4.0 R-4.4.0.tar.gz
 
 # Set CUDA environment variables
@@ -74,12 +72,13 @@ ENV CUDA_TOOLKIT_ROOT_DIR=$CUDA_HOME
 ENV MPI_TYPE=OPENMPI
 ENV MPICH_GPU_SUPPORT_ENABLED=0
 
-# Clone repo first to get install_packages.R
+# Clone SAIGE-QTL from GitHub
 WORKDIR /opt
 RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git
 
-# Run the install script
+# Navigate into the repository
 WORKDIR /opt/SAIGEQTL-GPU
+
 # Run the install_packages.R script
 RUN Rscript ./extdata/install_packages.R
 
@@ -92,53 +91,34 @@ RUN mkdir -p thirdParty/cget/include && \
     cmake .. && \
     make -j$(nproc) && \
     make install && \
-    # Copy headers to expected location
     cp -r ../include/savvy ../../cget/include/ || true && \
-    cd ../../.. || true
+    cd ../../..
 
 # Install pbdMPI with OpenMPI configuration
 RUN R -e "install.packages('pbdMPI', \
     configure.args='--with-mpi-type=OPENMPI', \
     repos='https://cloud.r-project.org/')"
 
+# Debug: Show original Makevars
+RUN echo "=== ORIGINAL MAKEVARS ===" && cat src/Makevars
+
+# Fix Makevars - use | delimiter since paths contain /
+RUN sed -i 's|/soft/compilers/cudatoolkit/cuda-[0-9.]*|/usr/local/cuda|g' src/Makevars && \
+    sed -i 's|/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
+    sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
+    sed -i 's|/usr/include/tbb|/usr/local/include/tbb|g' src/Makevars && \
+    sed -i 's|/usr/lib/aarch64-linux-gnu/openmpi|/usr/lib/x86_64-linux-gnu/openmpi|g' src/Makevars
+
+# Debug: Show updated Makevars
+RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars
+
 # Fix source code to include TBB header properly
-# The code uses concurrent_vector but doesn't include the header
-RUN if [ -f src/GENO_null.hpp ]; then \
-        # Check if concurrent_vector include is missing
-        if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
-            # Find where TBB headers are included and add concurrent_vector
-            sed -i '1i #include <tbb/concurrent_vector.h>' src/GENO_null.hpp && \
-            echo "Added TBB concurrent_vector header to GENO_null.hpp"; \
-        fi; \
+RUN if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
+        sed -i '1i #include <tbb/concurrent_vector.h>' src/GENO_null.hpp && \
+        echo "Added TBB concurrent_vector header"; \
     fi
 
-# Debug: Show the Makevars file content
-RUN echo "=== Checking Makevars ===" && \
-    if [ -f src/Makevars ]; then \
-        echo "=== Original Makevars content ===" && \
-        cat src/Makevars; \
-    fi
-
-# Fix Makevars to use container paths instead of Polaris-specific paths
-RUN if [ -f src/Makevars ]; then \
-        # Remove Polaris-specific paths
-        sed -i 's|-I/soft/compilers/cudatoolkit/cuda-[0-9.]*/include|-I/usr/local/cuda/include|g' src/Makevars && \
-        sed -i 's|-I/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
-        sed -i 's|-I /lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
-        # Fix thirdParty path to use current directory
-        sed -i 's|-I ../thirdParty/cget/include|-I./thirdParty/cget/include|g' src/Makevars && \
-        sed -i 's|-I ../thirdParty/cget/lib|-I./thirdParty/cget/lib|g' src/Makevars && \
-        sed -i 's|-I ../thirdParty/cget/lib64|-I./thirdParty/cget/lib64|g' src/Makevars && \
-        # Fix TBB paths
-        sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars && \
-        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars && \
-        # Fix MPI paths for OpenMPI in container
-        sed -i 's|-I/usr/lib/aarch64-linux-gnu/openmpi/include|-I/usr/lib/x86_64-linux-gnu/openmpi/include|g' src/Makevars && \
-        echo "=== Updated Makevars ===" && \
-        cat src/Makevars; \
-    fi
-
-# Set R build environment variables with explicit TBB paths
+# Set R build environment variables
 ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
 ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
 ENV PKG_LIBS="-L/usr/local/lib -ltbb"
@@ -146,13 +126,13 @@ ENV PKG_LIBS="-L/usr/local/lib -ltbb"
 # Build SAIGEQTL package
 RUN R CMD INSTALL --build .
 
-# Stage 2: Runtime environment (smaller final image)
+# Stage 2: Runtime environment
 FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/Chicago
 
-# Install runtime dependencies only
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libopenblas0 \
     libgomp1 \
@@ -169,37 +149,28 @@ RUN apt-get update && apt-get install -y \
     libopenmpi3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy R installation from builder
+# Copy from builder
 COPY --from=builder /usr/local /usr/local
-
-# Copy CUDA libraries needed for runtime
 COPY --from=builder /usr/local/cuda/lib64 /usr/local/cuda/lib64
-
-# Copy SAIGE-QTL installation (correct path: SAIGEQTL-GPU)
 COPY --from=builder /opt/SAIGEQTL-GPU /opt/SAIGEQTL-GPU
 COPY --from=builder /usr/local/lib/R /usr/local/lib/R
-
-# Copy TBB libraries from builder
 COPY --from=builder /usr/local/lib/libtbb* /usr/local/lib/
 
-# Run ldconfig to update library cache
+# Update library cache
 RUN ldconfig
 
-# Set environment variables (correct paths)
+# Set environment variables
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=/opt/SAIGEQTL-GPU/extdata:$CUDA_HOME/bin:$PATH
 ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 ENV R_LIBS=/usr/local/lib/R/site-library:/usr/local/lib/R/library
 ENV MPICH_GPU_SUPPORT_ENABLED=0
 
-# Create working directory
 WORKDIR /data
-
-# Set entrypoint
 ENTRYPOINT ["/bin/bash"]
 
 # Labels
 LABEL maintainer="Alex Rodriguez"
-LABEL description="GPU-accelerated SAIGE-QTL for eQTL analysis with repeated measures"
+LABEL description="GPU-accelerated SAIGE-QTL for eQTL analysis"
 LABEL version="1.0"
-LABEL source="https://github.com/exascale-genomics/SAIGEQTL-GPU.git"
+LABEL source="https://github.com/exascale-genomics/SAIGEQTL-GPU"
