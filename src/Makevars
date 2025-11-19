@@ -1,6 +1,10 @@
 # Makevars for SAIGE-QTL with CUDA/NVIDIA GPU on Polaris
 # Generated with your exact paths from: nvidia-smi, mpicc -show, which nvcc
 
+# ========== SAVVY, SUPERLU CONFIGURATION ==========
+LOCAL_HEADERS = /lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers
+LOCAL_LIBS = /lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/conda_libs
+
 # ========== GPU CONFIGURATION ==========
 # NVIDIA A100 80GB PCIe
 # Compute Capability: 80 (A100 uses sm_80)
@@ -18,9 +22,9 @@ MPI_LDFLAGS = $(shell mpicc -show | grep -oP '\-L[^\s]+' | head -1)
 
 # ========== CUDA LIBRARIES ==========
 # A100 CUDA libraries (adjust for your CUDA version if needed)
-CUDA_LIBS = -L/soft/compilers/cudatoolkit/cuda-12.6.3/lib64 \
+CUDA_LIBS = -L$(CUDA_HOME)/lib64 \
 -lcuda -lcudart -lcublas -lcufft -lcusparse \
--Wl,-rpath,/soft/compilers/cudatoolkit/cuda-12.6.3/lib64
+-Wl,-rpath,$(CUDA_HOME)/lib64
 
 # ========== COMPILER ==========
 CXX = g++
@@ -33,7 +37,7 @@ PKG_CPPFLAGS = -I$(CUDA_HOME)/include \
 -DUSE_GPU \
 -DUSE_pbdMPI \
 $(MPI_CPPFLAGS) \
--I /lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers/ \
+-I $(LOCAL_HEADERS) \
 -I $(TBBROOT)/include \
 -I ../thirdParty/cget/include \
 -I ../thirdParty/cget/lib \
@@ -50,7 +54,7 @@ CXX_STD = CXX17
 # ========== PKG_LIBS ==========
 PKG_LIBS = -L/opt/cray/pe/libsci/25.03.0/GNU/12.3/x86_64/lib \
 -lsci_gnu_mp $(ZLIB_LIB) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS) \
--L/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/conda_libs \
+-L$(LOCAL_LIBS) \
 -L../thirdParty/cget/lib/ \
 -L../thirdParty/cget/lib64/ \
 -lsuperlu -lzstd -L../lib64 \
