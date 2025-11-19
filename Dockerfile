@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     zlib1g-dev \
     libpcre2-dev \
+    libreadline-dev \
     openmpi-bin \
     openmpi-common \
     libopenmpi-dev \
@@ -39,6 +40,7 @@ RUN wget https://cran.r-project.org/src/base/R-4/R-4.4.0.tar.gz && \
                 --enable-R-shlib \
                 --with-blas \
                 --with-lapack \
+                --with-readline=yes \
                 --with-x=no && \
     make -j$(nproc) && \
     make install && \
@@ -84,6 +86,7 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     libxml2 \
     zlib1g \
+    libreadline8 \
     openmpi-bin \
     libopenmpi3 \
     && rm -rf /var/lib/apt/lists/*
