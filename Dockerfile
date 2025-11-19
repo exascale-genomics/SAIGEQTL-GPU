@@ -55,6 +55,7 @@ ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 ENV CUDA_TOOLKIT_ROOT_DIR=$CUDA_HOME
 
 # Clone repo first to get install_packages.R
+WORKDIR /opt
 RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git
 
 # Set MPI configuration for OpenMPI (not MPICH like on Polaris)
