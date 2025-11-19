@@ -27,6 +27,10 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     libpcre2-dev \
     libreadline-dev \
+    libpng-dev \
+    libgit2-dev \
+    libpq-dev \
+    libmariadb-dev \
     tzdata \
     openmpi-bin \
     openmpi-common \
@@ -82,16 +86,25 @@ WORKDIR /opt/SAIGEQTL-GPU
 # Run the install_packages.R script
 RUN Rscript ./extdata/install_packages.R
 
-# Install savvy library (VCF/BCF reader) and other third-party C++ dependencies
+# Install savvy library (VCF/BCF reader) and dependencies
 RUN mkdir -p thirdParty/cget/include && \
     cd thirdParty && \
+    # First install shrinkwrap (dependency of savvy)
+    git clone https://github.com/statgen/shrinkwrap.git && \
+    cd shrinkwrap && \
+    mkdir -p build && cd build && \
+    cmake .. && \
+    make -j$(nproc) && \
+    make install && \
+    cd ../.. && \
+    # Now install savvy
     git clone https://github.com/statgen/savvy.git && \
     cd savvy && \
     mkdir -p build && cd build && \
     cmake .. && \
     make -j$(nproc) && \
     make install && \
-    cp -r ../include/savvy ../../cget/include/ || true && \
+    cp -r ../include/savvy ../../cget/include/ && \
     cd ../../..
 
 # Install pbdMPI with OpenMPI configuration
@@ -107,7 +120,9 @@ RUN sed -i 's|/soft/compilers/cudatoolkit/cuda-[0-9.]*|/usr/local/cuda|g' src/Ma
     sed -i 's|/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
     sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
     sed -i 's|/usr/include/tbb|/usr/local/include/tbb|g' src/Makevars && \
-    sed -i 's|/usr/lib/aarch64-linux-gnu/openmpi|/usr/lib/x86_64-linux-gnu/openmpi|g' src/Makevars
+    sed -i 's|/usr/lib/aarch64-linux-gnu/openmpi|/usr/lib/x86_64-linux-gnu/openmpi|g' src/Makevars && \
+    sed -i 's|-I /include||g' src/Makevars && \
+    sed -i 's|/include||g' src/Makevars
 
 # Debug: Show updated Makevars
 RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars
