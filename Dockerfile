@@ -80,37 +80,32 @@ RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git
 
 # Run the install script
 WORKDIR /opt/SAIGEQTL-GPU
+# Run the install_packages.R script
 RUN Rscript ./extdata/install_packages.R
 
-# Install pbdMPI with OpenMPI
+# Install pbdMPI with OpenMPI configuration
 RUN R -e "install.packages('pbdMPI', \
     configure.args='--with-mpi-type=OPENMPI', \
     repos='https://cloud.r-project.org/')"
-    
-# Debug: Check if Makevars exists and show its content
-RUN echo "=== Checking for Makevars ===" && \
-    find . -name Makevars -type f && \
-    if [ -f src/Makevars ]; then \
-        echo "=== Original Makevars content ===" && \
-        cat src/Makevars; \
-    else \
-        echo "=== No Makevars found, checking Makevars.in ===" && \
-        if [ -f src/Makevars.in ]; then cat src/Makevars.in; fi; \
+
+# Fix source code to include TBB header properly
+# The code uses concurrent_vector but doesn't include the header
+RUN if [ -f src/GENO_null.hpp ]; then \
+        # Check if concurrent_vector include is missing
+        if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
+            # Find where TBB headers are included and add concurrent_vector
+            sed -i '1i #include <tbb/concurrent_vector.h>' src/GENO_null.hpp && \
+            echo "Added TBB concurrent_vector header to GENO_null.hpp"; \
+        fi; \
     fi
 
-# Fix Makevars or Makevars.in to use correct TBB path
+# Fix Makevars if it exists
 RUN if [ -f src/Makevars ]; then \
         sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars && \
-        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars && \
-        echo "=== Updated Makevars ===" && cat src/Makevars; \
-    fi && \
-    if [ -f src/Makevars.in ]; then \
-        sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars.in && \
-        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars.in && \
-        echo "=== Updated Makevars.in ===" && cat src/Makevars.in; \
+        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars; \
     fi
 
-# Set R build environment variables
+# Set R build environment variables with explicit TBB paths
 ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
 ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
 ENV PKG_LIBS="-L/usr/local/lib -ltbb"
