@@ -82,6 +82,11 @@ RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git
 WORKDIR /opt/SAIGEQTL-GPU
 RUN Rscript ./extdata/install_packages.R
 
+# Install pbdMPI with OpenMPI
+RUN R -e "install.packages('pbdMPI', \
+    configure.args='--with-mpi-type=OPENMPI', \
+    repos='https://cloud.r-project.org/')"
+    
 # Fix Makevars to use correct TBB path
 RUN if [ -f src/Makevars ]; then \
         sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars && \
@@ -91,11 +96,6 @@ RUN if [ -f src/Makevars ]; then \
 # Also set PKG_CXXFLAGS and PKG_LIBS for R build
 ENV PKG_CXXFLAGS="-I/usr/local/include"
 ENV PKG_LIBS="-L/usr/local/lib -ltbb"
-
-# Install pbdMPI with OpenMPI
-RUN R -e "install.packages('pbdMPI', \
-    configure.args='--with-mpi-type=OPENMPI', \
-    repos='https://cloud.r-project.org/')"
 
 # Build the package
 RUN R CMD INSTALL --build .
@@ -119,7 +119,6 @@ RUN apt-get update && apt-get install -y \
     zlib1g \
     libreadline8 \
     tzdata \
-    libtbb2 \
     openmpi-bin \
     libopenmpi3 \
     && rm -rf /var/lib/apt/lists/*
@@ -130,9 +129,15 @@ COPY --from=builder /usr/local /usr/local
 # Copy CUDA libraries needed for runtime
 COPY --from=builder /usr/local/cuda/lib64 /usr/local/cuda/lib64
 
-# Copy SAIGE-QTL installation
-COPY --from=builder /opt/SAIGE-QTL /opt/SAIGE-QTL
+# Copy SAIGE-QTL installation (correct path: SAIGEQTL-GPU)
+COPY --from=builder /opt/SAIGEQTL-GPU /opt/SAIGEQTL-GPU
 COPY --from=builder /usr/local/lib/R /usr/local/lib/R
+
+# Copy TBB libraries from builder
+COPY --from=builder /usr/local/lib/libtbb* /usr/local/lib/
+
+# Run ldconfig to update library cache
+RUN ldconfig
 
 # Set environment variables
 ENV CUDA_HOME=/usr/local/cuda
