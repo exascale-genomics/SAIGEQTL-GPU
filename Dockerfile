@@ -54,21 +54,24 @@ ENV PATH=$CUDA_HOME/bin:$PATH
 ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 ENV CUDA_TOOLKIT_ROOT_DIR=$CUDA_HOME
 
-# Install R packages
-RUN R -e "install.packages(c('Rcpp', 'RcppArmadillo', 'data.table', 'SPAtest', \
-    'SKAT', 'MetaSKAT', 'optparse', 'Matrix', 'methods'), \
-    repos='https://cloud.r-project.org/')"
+# Clone repo first to get install_packages.R
+RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git
 
-# Install pbdMPI (requires MPI)
+# Set MPI configuration for OpenMPI (not MPICH like on Polaris)
+ENV MPI_TYPE=OPENMPI
+ENV MPICH_GPU_SUPPORT_ENABLED=0
+
+# Run the install script
+WORKDIR /opt/SAIGEQTL-GPU
+RUN Rscript ./extdata/install_packages.R
+
+# Install pbdMPI with OpenMPI
 RUN R -e "install.packages('pbdMPI', \
     configure.args='--with-mpi-type=OPENMPI', \
     repos='https://cloud.r-project.org/')"
 
-# Clone and build SAIGE-QTL from GitHub
-WORKDIR /opt
-RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git && \
-    cd SAIGEQTL-GPU && \
-    R CMD INSTALL --build .
+# Build the package
+R CMD INSTALL --build .
 
 # Stage 2: Runtime environment (smaller final image)
 FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04
