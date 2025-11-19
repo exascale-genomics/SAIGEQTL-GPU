@@ -71,7 +71,7 @@ RUN R -e "install.packages('pbdMPI', \
     repos='https://cloud.r-project.org/')"
 
 # Build the package
-R CMD INSTALL --build .
+RUN R CMD INSTALL --build .
 
 # Stage 2: Runtime environment (smaller final image)
 FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04
