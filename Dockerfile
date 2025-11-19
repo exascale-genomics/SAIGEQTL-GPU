@@ -87,17 +87,35 @@ RUN R -e "install.packages('pbdMPI', \
     configure.args='--with-mpi-type=OPENMPI', \
     repos='https://cloud.r-project.org/')"
     
-# Fix Makevars to use correct TBB path
-RUN if [ -f src/Makevars ]; then \
-        sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars && \
-        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars; \
+# Debug: Check if Makevars exists and show its content
+RUN echo "=== Checking for Makevars ===" && \
+    find . -name Makevars -type f && \
+    if [ -f src/Makevars ]; then \
+        echo "=== Original Makevars content ===" && \
+        cat src/Makevars; \
+    else \
+        echo "=== No Makevars found, checking Makevars.in ===" && \
+        if [ -f src/Makevars.in ]; then cat src/Makevars.in; fi; \
     fi
 
-# Also set PKG_CXXFLAGS and PKG_LIBS for R build
-ENV PKG_CXXFLAGS="-I/usr/local/include"
+# Fix Makevars or Makevars.in to use correct TBB path
+RUN if [ -f src/Makevars ]; then \
+        sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars && \
+        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars && \
+        echo "=== Updated Makevars ===" && cat src/Makevars; \
+    fi && \
+    if [ -f src/Makevars.in ]; then \
+        sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars.in && \
+        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars.in && \
+        echo "=== Updated Makevars.in ===" && cat src/Makevars.in; \
+    fi
+
+# Set R build environment variables
+ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
+ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
 ENV PKG_LIBS="-L/usr/local/lib -ltbb"
 
-# Build the package
+# Build SAIGEQTL package
 RUN R CMD INSTALL --build .
 
 # Stage 2: Runtime environment (smaller final image)
@@ -139,10 +157,10 @@ COPY --from=builder /usr/local/lib/libtbb* /usr/local/lib/
 # Run ldconfig to update library cache
 RUN ldconfig
 
-# Set environment variables
+# Set environment variables (correct paths)
 ENV CUDA_HOME=/usr/local/cuda
-ENV PATH=/opt/SAIGE-QTL/SAIGEQTL/extdata:$CUDA_HOME/bin:$PATH
-ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+ENV PATH=/opt/SAIGEQTL-GPU/extdata:$CUDA_HOME/bin:$PATH
+ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 ENV R_LIBS=/usr/local/lib/R/site-library:/usr/local/lib/R/library
 ENV MPICH_GPU_SUPPORT_ENABLED=0
 
