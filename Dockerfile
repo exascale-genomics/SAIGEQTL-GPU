@@ -90,7 +90,7 @@ RUN Rscript ./extdata/install_packages.R
 RUN mkdir -p thirdParty/cget/include && \
     cd thirdParty && \
     # First install shrinkwrap (dependency of savvy)
-    git clone https://github.com/shrinkwrap/shrinkwrap && \
+    git clone https://github.com/jonathonl/shrinkwrap.git && \
     cd shrinkwrap && \
     mkdir -p build && cd build && \
     cmake .. && \
