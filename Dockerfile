@@ -45,10 +45,9 @@ RUN wget https://github.com/oneapi-src/oneTBB/archive/refs/tags/v2020.3.tar.gz &
     cd .. && \
     rm -rf oneTBB-2020.3 v2020.3.tar.gz
 
-# Set TBB environment
-ENV TBB_ROOT=/usr/local
-ENV CXXFLAGS="-I/usr/local/include"
-ENV PKG_CXXFLAGS="-I/usr/local/include"
+# Verify TBB installation
+RUN ls -la /usr/local/include/tbb/ && \
+    ls -la /usr/local/lib/libtbb*
 
 # Install R 4.4.0
 RUN wget https://cran.r-project.org/src/base/R-4/R-4.4.0.tar.gz && \
@@ -71,17 +70,27 @@ ENV PATH=$CUDA_HOME/bin:$PATH
 ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 ENV CUDA_TOOLKIT_ROOT_DIR=$CUDA_HOME
 
+# Set MPI configuration for OpenMPI
+ENV MPI_TYPE=OPENMPI
+ENV MPICH_GPU_SUPPORT_ENABLED=0
+
 # Clone repo first to get install_packages.R
 WORKDIR /opt
 RUN git clone https://github.com/exascale-genomics/SAIGEQTL-GPU.git
 
-# Set MPI configuration for OpenMPI (not MPICH like on Polaris)
-ENV MPI_TYPE=OPENMPI
-ENV MPICH_GPU_SUPPORT_ENABLED=0
-
 # Run the install script
 WORKDIR /opt/SAIGEQTL-GPU
 RUN Rscript ./extdata/install_packages.R
+
+# Fix Makevars to use correct TBB path
+RUN if [ -f src/Makevars ]; then \
+        sed -i 's|-I/usr/include/tbb|-I/usr/local/include|g' src/Makevars && \
+        sed -i 's|-L/usr/lib/x86_64-linux-gnu|-L/usr/local/lib|g' src/Makevars; \
+    fi
+
+# Also set PKG_CXXFLAGS and PKG_LIBS for R build
+ENV PKG_CXXFLAGS="-I/usr/local/include"
+ENV PKG_LIBS="-L/usr/local/lib -ltbb"
 
 # Install pbdMPI with OpenMPI
 RUN R -e "install.packages('pbdMPI', \
