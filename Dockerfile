@@ -118,7 +118,7 @@ RUN R -e "install.packages('pbdMPI', \
 RUN echo "=== ORIGINAL MAKEVARS ===" && cat src/Makevars
 
 # Fix Makevars - use | delimiter since paths contain /
-RUN sed -i 's|/soft/compilers/cudatoolkit/cuda-[0-9.]*|/usr/local/cuda|g' src/Makevars && \
+RUN sed -i 's|/soft/compilers/cudatoolkit/cuda-[0-9.]*|/usr/local/cuda/include|g' src/Makevars && \
     sed -i 's|/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
     sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
     sed -i 's|/usr/include/tbb|/usr/local/include/tbb|g' src/Makevars && \
