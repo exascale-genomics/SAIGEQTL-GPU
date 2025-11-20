@@ -128,9 +128,9 @@ RUN ARCH=$(dpkg --print-architecture) && if [ "$ARCH" = "amd64" ]; then ARCH_DIR
     sed -i 's|\$(TBBROOT)|/usr/local|g' src/Makevars && \
     sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
     sed -i "s|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I${MPI_INCLUDE} -I${MPI_INCLUDE}/openmpi|g" src/Makevars && \
-    sed -i "s|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L${MPI_LIB} -lmpi|g" src/Makevars &&
+    sed -i "s|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L${MPI_LIB} -lmpi|g" src/Makevars && \
     sed -i 's|-L/opt/cray/pe/libsci[^ ]* -lsci_gnu_mp||g' src/Makevars && \
-    sed -i 's|-L../lib64||g' src/Makevars
+    sed -i 's|-L\.\./lib64||g' src/Makevars
 
 # Debug: Show updated Makevars
 RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars
