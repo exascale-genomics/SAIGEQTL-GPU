@@ -126,7 +126,7 @@ RUN sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
     sed -i 's|\$(TBBROOT)|/usr/local|g' src/Makevars && \
     sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
     sed -i 's|/usr/lib/aarch64-linux-gnu|/usr/lib/x86_64-linux-gnu|g' src/Makevars && \
-    sed -i 's|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I/usr/lib/x86_64-linux-gnu/openmpi/include|g' src/Makevars && \
+    sed -i 's|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi|g' src/Makevars && \
     sed -i 's|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi|g' src/Makevars
 
 # Debug: Show updated Makevars
