@@ -91,7 +91,6 @@ RUN Rscript ./extdata/install_packages.R
 # Install savvy library (VCF/BCF reader) and dependencies
 RUN mkdir -p thirdParty/cget/include && \
     cd thirdParty && \
-    # First install shrinkwrap (dependency of savvy)
     git clone https://github.com/jonathonl/shrinkwrap.git && \
     cd shrinkwrap && \
     mkdir -p build && cd build && \
@@ -99,7 +98,6 @@ RUN mkdir -p thirdParty/cget/include && \
     make -j$(nproc) && \
     make install && \
     cd ../.. && \
-    # Now install savvy
     git clone https://github.com/statgen/savvy.git && \
     cd savvy && \
     mkdir -p build && cd build && \
@@ -117,17 +115,21 @@ RUN R -e "install.packages('pbdMPI', \
 # Debug: Show original Makevars
 RUN echo "=== ORIGINAL MAKEVARS ===" && cat src/Makevars
 
-# Fix Makevars comprehensively
-RUN sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
+# Fix Makevars - dynamically detect architecture for MPI paths
+RUN ARCH=$(dpkg --print-architecture) && \
+    echo "=== Detected architecture: $ARCH ===" && \
+    MPI_INCLUDE="/usr/lib/${ARCH}-linux-gnu/openmpi/include" && \
+    MPI_LIB="/usr/lib/${ARCH}-linux-gnu/openmpi/lib" && \
+    sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
     sed -i 's|^LOCAL_LIBS = .*|LOCAL_LIBS =|g' src/Makevars && \
     sed -i 's|^CUDA_HOME = .*|CUDA_HOME = /usr/local/cuda|g' src/Makevars && \
     sed -i 's|-I $(LOCAL_HEADERS)||g' src/Makevars && \
     sed -i 's|-L$(LOCAL_LIBS)||g' src/Makevars && \
     sed -i 's|\$(TBBROOT)|/usr/local|g' src/Makevars && \
     sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
-    sed -i 's|/usr/lib/aarch64-linux-gnu|/usr/lib/x86_64-linux-gnu|g' src/Makevars && \
-    sed -i 's|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi|g' src/Makevars && \
-    sed -i 's|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi|g' src/Makevars
+    sed -i "s|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I${MPI_INCLUDE} -I${MPI_INCLUDE}/openmpi|g" src/Makevars && \
+    sed -i "s|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L${MPI_LIB} -lmpi|g" src/Makevars
+
 # Debug: Show updated Makevars
 RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars
 
@@ -137,12 +139,15 @@ RUN if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
         echo "Added TBB concurrent_vector header"; \
     fi
 
-# Set global R build environment for headers/libs (fixes MPI, CUDA, TBB include)
-ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
-ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
-ENV PKG_LIBS="-L/usr/local/lib -ltbb"
+# Set R build environment - also detect architecture for MPI
+RUN ARCH=$(dpkg --print-architecture) && \
+    echo "export PKG_CPPFLAGS=\"-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include/openmpi\"" >> /etc/environment && \
+    echo "export PKG_CXXFLAGS=\"-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include/openmpi\"" >> /etc/environment && \
+    echo "export PKG_LIBS=\"-L/usr/local/lib -ltbb\"" >> /etc/environment
 
-RUN echo "Searching for mpi.h..." && find /usr/include /usr/lib /opt /usr/local -name mpi.h
+ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
+ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
+ENV PKG_LIBS="-L/usr/local/lib -ltbb"
 
 # Build SAIGEQTL package
 RUN R CMD INSTALL --build .
@@ -195,4 +200,3 @@ LABEL maintainer="Alex Rodriguez"
 LABEL description="GPU-accelerated SAIGE-QTL for eQTL analysis"
 LABEL version="1.0"
 LABEL source="https://github.com/exascale-genomics/SAIGEQTL-GPU"
-
