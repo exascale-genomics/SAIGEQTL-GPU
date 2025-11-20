@@ -143,6 +143,8 @@ ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cud
 ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
 ENV PKG_LIBS="-L/usr/local/lib -ltbb"
 
+RUN echo "Searching for mpi.h..." && find /usr/include /usr/lib /opt /usr/local -name mpi.h
+
 # Build SAIGEQTL package
 RUN R CMD INSTALL --build .
 
