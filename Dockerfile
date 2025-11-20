@@ -112,11 +112,6 @@ RUN R -e "install.packages('pbdMPI', configure.args='--with-mpi-type=OPENMPI', r
 # Debug: Show original Makevars
 RUN echo "=== ORIGINAL MAKEVARS ===" && cat src/Makevars || true
 
-# Fix Makevars and replace x86_64 with aarch64 for all OpenMPI paths
-RUN sed -i 's|/usr/lib/x86_64-linux-gnu/openmpi/include|/usr/lib/aarch64-linux-gnu/openmpi/include|g' src/Makevars && \
-    sed -i 's|/usr/lib/x86_64-linux-gnu/openmpi/lib|/usr/lib/aarch64-linux-gnu/openmpi/lib|g' src/Makevars && \
-    sed -i 's|/usr/lib/x86_64-linux-gnu|/usr/lib/aarch64-linux-gnu|g' src/Makevars
-
 # Fix Makevars comprehensively
 RUN sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
     sed -i 's|^LOCAL_LIBS = .*|LOCAL_LIBS =|g' src/Makevars && \
@@ -128,7 +123,9 @@ RUN sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
     sed -i 's|/usr/lib/aarch64-linux-gnu|/usr/lib/x86_64-linux-gnu|g' src/Makevars && \
     sed -i 's|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi|g' src/Makevars && \
     sed -i 's|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi|g' src/Makevars && \
-    sed -i 's|/usr/lib/x86_64-linux-gnu/openmpi/include|/usr/lib/aarch64-linux-gnu/openmpi/include|g' src/Makevars
+    sed -i 's|/usr/lib/x86_64-linux-gnu/openmpi/include|/usr/lib/aarch64-linux-gnu/openmpi/include|g' src/Makevars \
+    sed -i '/\/opt\/cray/d' src/Makevars && \
+    sed -i 's|/usr/lib/x86_64-linux-gnu|/usr/lib/aarch64-linux-gnu|g' src/Makevars
 
 # Debug: Show updated Makevars
 RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars || true
