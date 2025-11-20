@@ -117,14 +117,17 @@ RUN R -e "install.packages('pbdMPI', \
 # Debug: Show original Makevars
 RUN echo "=== ORIGINAL MAKEVARS ===" && cat src/Makevars
 
-# Fix Makevars - use | delimiter since paths contain /
-RUN sed -i 's|/soft/compilers/cudatoolkit/cuda-[0-9.]*|/usr/local/cuda/include|g' src/Makevars && \
-    sed -i 's|/lus/grand/projects/GeomicVar/rodriguez/saige/SAIGE-QTL/headers||g' src/Makevars && \
+# Fix Makevars comprehensively
+RUN sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
+    sed -i 's|^LOCAL_LIBS = .*|LOCAL_LIBS =|g' src/Makevars && \
+    sed -i 's|^CUDA_HOME = .*|CUDA_HOME = /usr/local/cuda|g' src/Makevars && \
+    sed -i 's|-I $(LOCAL_HEADERS)||g' src/Makevars && \
+    sed -i 's|-L$(LOCAL_LIBS)||g' src/Makevars && \
+    sed -i 's|\$(TBBROOT)|/usr/local|g' src/Makevars && \
     sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
-    sed -i 's|/usr/include/tbb|/usr/local/include/tbb|g' src/Makevars && \
-    sed -i 's|/usr/lib/aarch64-linux-gnu/openmpi|/usr/lib/x86_64-linux-gnu/openmpi|g' src/Makevars && \
-    sed -i 's|-I /include||g' src/Makevars && \
-    sed -i 's|/include||g' src/Makevars
+    sed -i 's|/usr/lib/aarch64-linux-gnu|/usr/lib/x86_64-linux-gnu|g' src/Makevars && \
+    sed -i 's|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I/usr/lib/x86_64-linux-gnu/openmpi/include|g' src/Makevars && \
+    sed -i 's|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi|g' src/Makevars
 
 # Debug: Show updated Makevars
 RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars
@@ -136,8 +139,8 @@ RUN if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
     fi
 
 # Set R build environment variables
-ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
-ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb"
+ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
+ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
 ENV PKG_LIBS="-L/usr/local/lib -ltbb"
 
 # Build SAIGEQTL package
@@ -191,3 +194,4 @@ LABEL maintainer="Alex Rodriguez"
 LABEL description="GPU-accelerated SAIGE-QTL for eQTL analysis"
 LABEL version="1.0"
 LABEL source="https://github.com/exascale-genomics/SAIGEQTL-GPU"
+
