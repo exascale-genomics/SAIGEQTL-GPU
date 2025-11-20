@@ -117,6 +117,19 @@ RUN sed -i 's|/usr/lib/x86_64-linux-gnu/openmpi/include|/usr/lib/aarch64-linux-g
     sed -i 's|/usr/lib/x86_64-linux-gnu/openmpi/lib|/usr/lib/aarch64-linux-gnu/openmpi/lib|g' src/Makevars && \
     sed -i 's|/usr/lib/x86_64-linux-gnu|/usr/lib/aarch64-linux-gnu|g' src/Makevars
 
+# Fix Makevars comprehensively
+RUN sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
+    sed -i 's|^LOCAL_LIBS = .*|LOCAL_LIBS =|g' src/Makevars && \
+    sed -i 's|^CUDA_HOME = .*|CUDA_HOME = /usr/local/cuda|g' src/Makevars && \
+    sed -i 's|-I $(LOCAL_HEADERS)||g' src/Makevars && \
+    sed -i 's|-L$(LOCAL_LIBS)||g' src/Makevars && \
+    sed -i 's|\$(TBBROOT)|/usr/local|g' src/Makevars && \
+    sed -i 's|\.\./thirdParty|./thirdParty|g' src/Makevars && \
+    sed -i 's|/usr/lib/aarch64-linux-gnu|/usr/lib/x86_64-linux-gnu|g' src/Makevars && \
+    sed -i 's|MPI_CPPFLAGS = .*|MPI_CPPFLAGS = -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi|g' src/Makevars && \
+    sed -i 's|MPI_LDFLAGS = .*|MPI_LDFLAGS = -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi|g' src/Makevars && \
+    sed -i 's|/usr/lib/x86_64-linux-gnu/openmpi/include|/usr/lib/aarch64-linux-gnu/openmpi/include|g' src/Makevars
+
 # Debug: Show updated Makevars
 RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars || true
 
