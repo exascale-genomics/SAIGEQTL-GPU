@@ -133,6 +133,22 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Debug: Show updated Makevars
 RUN echo "=== UPDATED MAKEVARS ===" && cat src/Makevars
 
+# Debug MPI installation comprehensively
+RUN echo "=== Architecture ===" && dpkg --print-architecture && \
+    echo "=== Searching for mpi.h ===" && \
+    find /usr -name "mpi.h" 2>/dev/null || echo "mpi.h not found!" && \
+    echo "=== OpenMPI directories ===" && \
+    ls -la /usr/lib/*/openmpi/ 2>/dev/null || echo "No openmpi dirs" && \
+    echo "=== Checking specific paths ===" && \
+    ARCH=$(dpkg --print-architecture) && \
+    echo "Architecture detected: $ARCH" && \
+    ls -la /usr/lib/${ARCH}-linux-gnu/ | grep openmpi || echo "No openmpi in arch-specific lib" && \
+    ls -la /usr/include/ | grep -i mpi || echo "No MPI in /usr/include" && \
+    echo "=== MPI packages installed ===" && \
+    dpkg -l | grep -i openmpi && \
+    echo "=== Checking if mpicc works ===" && \
+    which mpicc && mpicc --version || echo "mpicc not found"
+
 # Fix source code to include TBB header properly
 RUN if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
         sed -i '1i #include <tbb/concurrent_vector.h>' src/GENO_null.hpp && \
@@ -141,9 +157,12 @@ RUN if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
 
 # Set R build environment - also detect architecture for MPI
 RUN ARCH=$(dpkg --print-architecture) && \
-    echo "export PKG_CPPFLAGS=\"-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include/openmpi\"" >> /etc/environment && \
-    echo "export PKG_CXXFLAGS=\"-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include -I/usr/lib/${ARCH}-linux-gnu/openmpi/include/openmpi\"" >> /etc/environment && \
-    echo "export PKG_LIBS=\"-L/usr/local/lib -ltbb\"" >> /etc/environment
+    echo "=== Setting up R build environment for arch: $ARCH ===" && \
+    MPI_INC_1="/usr/lib/${ARCH}-linux-gnu/openmpi/include" && \
+    MPI_INC_2="/usr/lib/${ARCH}-linux-gnu/openmpi/include/openmpi" && \
+    echo "MPI_INC_1: $MPI_INC_1 (exists: $(test -d $MPI_INC_1 && echo YES || echo NO))" && \
+    echo "MPI_INC_2: $MPI_INC_2 (exists: $(test -d $MPI_INC_2 && echo YES || echo NO))" && \
+    if [ ! -d "$MPI_INC_1" ]; then echo "ERROR: Primary MPI include dir missing!"; fi
 
 ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
 ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
