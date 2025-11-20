@@ -138,9 +138,9 @@ RUN if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
         echo "Added TBB concurrent_vector header"; \
     fi
 
-# Set R build environment variables
-ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
-ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include"
+# Set global R build environment for headers/libs (fixes MPI, CUDA, TBB include)
+ENV PKG_CPPFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
+ENV PKG_CXXFLAGS="-I/usr/local/include -I/usr/local/include/tbb -I/usr/local/cuda/include -I/usr/lib/x86_64-linux-gnu/openmpi/include -I/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi"
 ENV PKG_LIBS="-L/usr/local/lib -ltbb"
 
 # Build SAIGEQTL package
