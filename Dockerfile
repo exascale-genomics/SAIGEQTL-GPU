@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y \
     openmpi-bin \
     openmpi-common \
     libopenmpi-dev \
+    libsuperlu-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install older TBB version (2020.3) that has concurrent_vector
