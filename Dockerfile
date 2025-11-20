@@ -116,10 +116,10 @@ RUN R -e "install.packages('pbdMPI', \
 RUN echo "=== ORIGINAL MAKEVARS ===" && cat src/Makevars
 
 # Fix Makevars - dynamically detect architecture for MPI paths
-RUN ARCH=$(dpkg --print-architecture) && \
+RUN ARCH=$(dpkg --print-architecture) && if [ "$ARCH" = "amd64" ]; then ARCH_DIR="x86_64"; else ARCH_DIR="$ARCH"; fi && \
     echo "=== Detected architecture: $ARCH ===" && \
-    MPI_INCLUDE="/usr/lib/${ARCH}-linux-gnu/openmpi/include" && \
-    MPI_LIB="/usr/lib/${ARCH}-linux-gnu/openmpi/lib" && \
+    MPI_INCLUDE="/usr/lib/${ARCH_DIR}-linux-gnu/openmpi/include" && \
+    MPI_LIB="/usr/lib/${ARCH_DIR}-linux-gnu/openmpi/lib" && \
     sed -i 's|^LOCAL_HEADERS = .*|LOCAL_HEADERS =|g' src/Makevars && \
     sed -i 's|^LOCAL_LIBS = .*|LOCAL_LIBS =|g' src/Makevars && \
     sed -i 's|^CUDA_HOME = .*|CUDA_HOME = /usr/local/cuda|g' src/Makevars && \
@@ -156,10 +156,10 @@ RUN if ! grep -q "#include.*concurrent_vector" src/GENO_null.hpp; then \
     fi
 
 # Set R build environment - also detect architecture for MPI
-RUN ARCH=$(dpkg --print-architecture) && \
+RUN ARCH=$(dpkg --print-architecture) && if [ "$ARCH" = "amd64" ]; then ARCH_DIR="x86_64"; else ARCH_DIR="$ARCH"; fi && \
     echo "=== Setting up R build environment for arch: $ARCH ===" && \
-    MPI_INC_1="/usr/lib/${ARCH}-linux-gnu/openmpi/include" && \
-    MPI_INC_2="/usr/lib/${ARCH}-linux-gnu/openmpi/include/openmpi" && \
+    MPI_INC_1="/usr/lib/${ARCH_DIR}-linux-gnu/openmpi/include" && \
+    MPI_INC_2="/usr/lib/${ARCH_DIR}-linux-gnu/openmpi/include/openmpi" && \
     echo "MPI_INC_1: $MPI_INC_1 (exists: $(test -d $MPI_INC_1 && echo YES || echo NO))" && \
     echo "MPI_INC_2: $MPI_INC_2 (exists: $(test -d $MPI_INC_2 && echo YES || echo NO))" && \
     if [ ! -d "$MPI_INC_1" ]; then echo "ERROR: Primary MPI include dir missing!"; fi
